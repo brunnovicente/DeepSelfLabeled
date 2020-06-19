@@ -27,24 +27,24 @@ class DeepAutoEncoder(object):
         self.lote = 256
         
         input_img = Input((dim,))
-        encoded = Dense(250, activation='relu')(input_img)
-        drop = Dropout(0.2)(encoded)
-        encoded = Dense(150, activation='relu')(drop)
-        drop = Dropout(0.2)(encoded)
-        encoded = Dense(100, activation='relu')(drop)
+        encoded = Dense(128, activation='relu')(input_img)
+        #drop = Dropout(0.2)(encoded)
+        encoded = Dense(64, activation='relu')(encoded)
+        #drop = Dropout(0.2)(encoded)
+        encoded = Dense(32, activation='relu')(encoded)
         
         Z = Dense(k, activation='relu')(encoded)
         
-        decoded = Dense(100, activation='relu')(Z)
-        drop = Dropout(0.2)(decoded)
-        decoded = Dense(150, activation='relu')(drop)
-        drop = Dropout(0.2)(decoded)
-        decoded = Dense(250, activation='relu')(drop)
+        decoded = Dense(32, activation='relu')(Z)
+        #drop = Dropout(0.2)(decoded)
+        decoded = Dense(64, activation='relu')(decoded)
+        #drop = Dropout(0.2)(decoded)
+        decoded = Dense(128, activation='relu')(decoded)
         decoded = Dense(dim, activation='sigmoid')(decoded)
                         
         self.encoder = Model(input_img, Z)
         self.autoencoder = Model(input_img, decoded)
-        self.autoencoder.compile(loss='binary_crossentropy', optimizer=SGD(lr=0.1, decay=0, momentum=0.9))
+        self.autoencoder.compile(loss='binary_crossentropy', optimizer='adadelta')
         self.autoencoder.summary()
         
     def fit(self, X):
