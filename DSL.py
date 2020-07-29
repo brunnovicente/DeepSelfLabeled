@@ -3,6 +3,7 @@ from time import time
 import numpy as np
 import pandas as pd
 import keras.backend as K
+from minisom import MiniSom
 from keras.initializers import RandomNormal
 from keras.engine.topology import Layer, InputSpec
 from keras.models import Model, Sequential, load_model
@@ -149,9 +150,23 @@ class DeepSelfLabeled(object):
     def agrupamento(self, X, optimizer='adam', epocas=200, lote=256):
         #Inicialização do Modelo
         print('INICIALIZANDO...')
-        self.pretrain(X,epochs=epocas, batch_size=lote)
-        self.gruposU = self.clustering(X)
-        return self.gruposU
+        self.trainDAE(X,epochs=epocas, batch_size=lote)
+                        
+    def trainDAE(self, x, y=None, optimizer='adam', epochs=200, batch_size=256):
+        print('...Treinando DAE...')
+        self.autoencoder.compile(optimizer=optimizer, loss='mse')
+        # begin pretraining
+        t0 = time()
+        self.autoencoder.fit(x, x, batch_size=batch_size, epochs=epochs, verbose=True)
+        print('Tempo de Treinamento: %ds' % round(time() - t0))
+        self.pretrained = True
+    
+    def inicializar_centroides(self, X):
+        som = MiniSom(25, 25)
+        som.train_random(X, 500)
+        return som.get_weights()
+    
+    
     
     def train(self, L, U, y, optimizer='adam', epocas=200, lote=256):
         
@@ -224,39 +239,8 @@ class DeepSelfLabeled(object):
                 D.at[indices, 'g'] = respostas            
                 
         return D.iloc[0:np.size(U, axis=0) , -1].values
-        
-    """
-        Calcula o vetor I de uma amostra
-    """
-    def calcular_classe(self, x, PL, k, t, c):
-        indices = PL.index.values
-        X = PL.drop(['classe'], axis=1).values
-        div = []
-        
-        #CALCULANDO A DIVERGÊNCIA PARA CADA UMA DAS AMOSTRAS ROTULADAS
-        for xe in X:
-            div.append(ITL.divergence_kullbackleibler_pmf(x, xe))
-        
-        #CALCULANDO A LISTA ELEGÍVEL A I
-        DL = PL.copy()    
-        DL['div'] = div
-        DL = DL.sort_values(by='div')
-        I = DL.iloc[0:k,:]
-        
-        #TESTA O VALOR DE t
-        for i in I['div'].values:
-            if(i > t):
-               return -1
-        
-        #CALCULA A CLASSE
-        P = []
-        for v in np.arange(c):
-            q = (I['classe'] == v).sum()
-            p = q / k
-            P.append(int(self.degrau(p)))
-        
-        return self.classe(P)
-   
+       
+       
     def degrau(self, x):
         if(x > 0.5):
             return 1.
@@ -269,14 +253,7 @@ class DeepSelfLabeled(object):
             classe += i*p
         return classe   
             
-    def pretrain(self, x, y=None, optimizer='adam', epochs=200, batch_size=256):
-        print('...Pretraining...')
-        self.autoencoder.compile(optimizer=optimizer, loss='mse')
-        # begin pretraining
-        t0 = time()
-        self.autoencoder.fit(x, x, batch_size=batch_size, epochs=epochs, verbose=False)
-        print('Pretraining time: %ds' % round(time() - t0))
-        self.pretrained = True
+    
     
     def predict(self, x):  # predict cluster labels using the output of clustering layer
         q = self.model.predict(x, verbose=0)
@@ -285,29 +262,3 @@ class DeepSelfLabeled(object):
     def target_distribution(self, q):
         weight = q ** 2 / q.sum(0)
         return (weight.T / weight.sum(1)).T
-
-    def compile(self, optimizer='sgd', loss='kld'):
-        self.model.compile(optimizer=optimizer, loss=loss)
-
-    def clustering(self, x, y=None, maxiter=2e4, batch_size=256, tol=1e-3, update_interval=140):
-
-        #print('Update interval', update_interval)
-        save_interval = int(x.shape[0] / batch_size) * 5  # 5 epochs
-        #print('Save interval', save_interval)
-
-        # Step 1: initialize cluster centers using k-means
-        t1 = time()
-        print('Initializing cluster centers with k-means.')
-        kmeans = KMeans(n_clusters=self.n_clusters, n_init=20)
-        y_pred = kmeans.fit_predict(self.encoder.predict(x))
-        y_pred_last = np.copy(y_pred)
-        self.model.get_layer(name='labeling').set_weights([kmeans.cluster_centers_])
-
-        p = self.model.predict(x, verbose=0)
-        y = q = np_utils.to_categorical(p.argmax(1))
-        
-        self.compile()
-        
-        self.model.fit(x, y, epochs=200, verbose=False)
-
-        return self.predict(x)
